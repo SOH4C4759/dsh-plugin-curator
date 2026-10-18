@@ -374,7 +374,16 @@
          * process uptime as if it were a startup cost.
          */
         const bootHot = boot.current?.hot === true
-        const bootNow = bootHot ? null : (Number.isFinite(boot.current?.settledMs) ? boot.current.settledMs : null)
+        /**
+         * `complete` is written by the settle watcher of THIS Host build. Its
+         * absence means the running Host half predates the panel — e.g. the
+         * package was updated without a restart — and the number next to it is
+         * whatever that older build called a duration. Refuse to print it.
+         */
+        const bootStaleHost = boot.current?.complete === undefined && !bootHot
+        const bootNow = bootHot || bootStaleHost
+          ? null
+          : (Number.isFinite(boot.current?.settledMs) ? boot.current.settledMs : null)
         const stalled = Array.isArray(boot.current?.stalled) ? boot.current.stalled : []
         const measurable = Number.isFinite(totals.measuredBootMs)
         const thirdPartyBytes = Number.isFinite(totals.thirdPartyBytes) ? totals.thirdPartyBytes : totals.clientBytes
@@ -420,7 +429,8 @@
             h('span', { className: 'dspc-title' }, '插件管家'),
             h('span', { className: 'dspc-sub' }, report.profile?.dir ?? '未识别 profile')),
           h('span', { className: 'dspc-grow' }),
-          h(Chip, { tone: bootHot ? undefined : 'good' }, bootHot ? '热安装' : `启动 ${ms(bootNow)}`),
+          h(Chip, { tone: bootHot || bootStaleHost ? undefined : 'good' },
+            bootHot ? '热安装' : bootStaleHost ? '重启后出数' : `启动 ${ms(bootNow)}`),
           h(Chip, null, `插件 ${String(totals.enabled ?? 0)}/${String(totals.plugins ?? 0)}`),
           totals.failed > 0 ? h(Chip, { tone: 'bad' }, `异常 ${String(totals.failed)}`) : null,
           h('button', {
@@ -440,10 +450,12 @@
           h('div', { className: 'dspc-grid', key: 'grid' },
             h(Metric, {
               label: '本机启动总时长',
-              value: bootHot ? '—' : ms(bootNow),
+              value: bootHot || bootStaleHost ? '—' : ms(bootNow),
               note: bootHot
                 ? '本插件是热安装的：本次进程启动早于它，重启后开始记录'
-                : '实测：进程启动 → 所有插件进入终态',
+                : bootStaleHost
+                  ? 'Host 半仍是旧版本：重启 DSH 后开始记录启动时长'
+                  : '实测：进程启动 → 所有插件进入终态',
             }),
             h(Metric, {
               label: '插件模块冷加载合计',
