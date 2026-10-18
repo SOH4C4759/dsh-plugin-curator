@@ -628,9 +628,18 @@ export function suggestFor(facts) {
     return { verdict: 'disable', reasons }
   }
   if (quiet && !hasUi) {
-    push('quiet-host-only', '窗口内 0 次调用，且没有 UI —— 它只在被调用时才有意义')
-    if (slow) push('slow', `模块冷加载 ${String(Math.round(facts.bootMs))} ms`)
-    return { verdict: 'disable', reasons }
+    // No UI and no tool calls is NOT evidence of disuse: a host-only plugin can
+    // work by injecting prompt sections, listening to events, or decorating
+    // another surface — none of which leaves a `tool/call` behind. Only a real
+    // cold-load cost is enough to recommend turning it off; otherwise this panel
+    // says it cannot see the thing instead of guessing.
+    if (slow) {
+      push('quiet-host-only', `窗口内 0 次调用、没有 UI，而模块冷加载 ${String(Math.round(facts.bootMs))} ms`)
+      push('slow', '每次启动都要付这笔开销，且没有可观测的收益')
+      return { verdict: 'disable', reasons }
+    }
+    push('unobservable-host-only', '没有 UI、也没有工具调用：它的作用（注入提示词/监听事件等）不在本面板的观测范围内，需人工判断')
+    return { verdict: 'review', reasons }
   }
   if (quiet && hasUi) {
     if (heavyUi) {
@@ -1333,25 +1342,28 @@ export function apply(ctx) {
     const profileManifest = readJsonSafe(runtime.store.packPath, null)
     const targets = []
     const seen = new Set()
+    let skippedBuiltin = 0
     for (const plugin of plugins) {
       if (plugin?.enabled !== true) continue
       const moduleName = String(plugin?.moduleName ?? '')
       const dir = resolvePackageDir(moduleName, profileManifest)
       if (dir === null || seen.has(dir)) continue
       seen.add(dir)
+      /**
+       * DSH's own packages live inside `app.asar`, and the probe runs in a plain
+       * Node child process, which cannot read that archive — measuring them would
+       * produce a column of failures for rows the user can neither disable nor
+       * move. They are counted, not timed.
+       */
+      if (isBuiltin(moduleName, dir)) {
+        skippedBuiltin += 1
+        continue
+      }
       const manifest = readManifest(dir)
       const entry = entryCandidates(dir, manifest)[0]
       if (entry === undefined) continue
-      targets.push({
-        key: benchKeyFor(dir, manifest),
-        moduleName,
-        entry,
-        thirdParty: isBuiltin(moduleName, dir) !== true,
-      })
+      targets.push({ key: benchKeyFor(dir, manifest), moduleName, entry })
     }
-    // Third-party first: if the run is interrupted, the rows the user can act on
-    // are already measured.
-    targets.sort((a, b) => Number(b.thirdParty) - Number(a.thirdParty))
 
     const job = runtime.jobs.bench
     job.state = 'running'
@@ -1386,7 +1398,9 @@ export function apply(ctx) {
           job.done += 1
         }
         job.state = 'done'
-        job.message = `已测量 ${String(job.total)} 个插件`
+        job.message = skippedBuiltin === 0
+          ? `已测量 ${String(job.total)} 个插件`
+          : `已测量 ${String(job.total)} 个第三方插件；另有 ${String(skippedBuiltin)} 个内置组件不测（在 app.asar 内，纯 node 子进程加载不了）`
       } catch (error) {
         job.state = 'error'
         job.message = String(error?.message ?? error)

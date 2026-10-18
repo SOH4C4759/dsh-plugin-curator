@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-curator",
   "version": "0.1.0",
-  "description": "本地插件管家：实测每个插件对 DSH 启动的开销、统计活跃度、给出禁用建议，并清理不兼容/未启用条目且可找回。",
+  "description": "官方「插件」页里的插件管家标签页与插件详情小节：实测每个插件对 DSH 启动的开销、统计活跃度、给出禁用建议，并清理不兼容/未启用条目且可找回。",
   "license": "MIT",
   "author": "lxj5820",
   "type": "module",

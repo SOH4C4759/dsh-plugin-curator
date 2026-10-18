@@ -1,10 +1,18 @@
 // dsh-plugin-curator — browser half.
 //
-// Two registrations, the same shape the shipped Plugin Manager panel uses:
+// Two registrations, both INSIDE the shipped Plugins page — the curator is a
+// view of that page, not a second sidebar entry of its own:
 //
-//   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID }, CuratorPage))
-//   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register(
-//     { name: 'sidebar.panellist', id: PANEL_ID, order: 17, label: () => '插件管家' }, CuratorIcon))
+//   ctx.slots.inject('plugins.tab', () => ctx.slots.register(
+//     { name: 'plugins.tab', id: TAB_ID, order: 10, label: () => '插件管家' }, CuratorPage))
+//   ctx.slots.inject('plugins.detail.section', () => ctx.slots.register(
+//     { name: 'plugins.detail.section', id: DETAIL_ID, order: 10, label: () => '插件管家' }, CuratorDetail))
+//
+// `plugins.tab` is the shipped seam for "a tab after the page's own Installed
+// tab": the entry's `id` IS the tab key (the page renders the slot with
+// `{ only: tab }`), and the component draws the tab body under the page's own
+// header and tab strip. `plugins.detail.section` adds the same facts to one
+// plugin's own page, where the subject is already chosen.
 //
 // The panel draws four things and never invents a fifth:
 //
@@ -15,8 +23,8 @@
 //           action that follows from it.
 //   启动    the three separately-measured startup numbers, the per-plugin bars,
 //           and the boot history with A/B deltas across composition changes.
-//   清理    failed / version-incompatible entries, entries already disabled, and
-//           the quarantine bin that 找回 reads from.
+//   清理    failed / version-incompatible / stalled entries, entries already
+//           disabled, and the quarantine bin that 找回 reads from.
 //
 // All numbers arrive from the Host; this half measures exactly one thing of its
 // own — the browser's Resource Timing for each plugin's client bundle — and posts
@@ -31,8 +39,10 @@
       const React = require('react')
       const h = React.createElement
 
-      /** Sidebar entry id and `main` slot key — the same value links the two. */
-      const PANEL_ID = 'plugin-curator'
+      /** Tab key inside the Plugins page (`plugins.tab` occupant id). */
+      const TAB_ID = 'curator'
+      /** Section id on one plugin's own detail page. */
+      const DETAIL_ID = 'curator-detail'
       const STYLE_ID = 'dsh-plugin-curator-styles'
       const BASE = '/api/plugin-curator'
       const REQUEST_TIMEOUT_MS = 25_000
@@ -131,6 +141,16 @@
 .dspc-note code { font-size: 11.5px; padding: 1px 4px; border-radius: 4px;
   background: var(--dsw-alias-bg-layer-2, #f1f2f4); }
 .dspc-confirm { font-size: 12px; color: #b42318; display: flex; align-items: center; gap: 6px; }
+.dspc-detail { margin-top: 14px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l1, #e5e7eb); background: var(--dsw-alias-bg-layer-1, #fbfcfd); }
+.dspc-detail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.dspc-detail-title { font-weight: 650; font-size: 12.5px; }
+.dspc-detail-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+.dspc-detail-cell { font-size: 11.5px; color: var(--dsw-alias-label-secondary, #6b7280); }
+.dspc-detail-cell b { display: block; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary, #111); }
+.dspc-detail-note { font-size: 11.5px; color: var(--dsw-alias-label-secondary, #6b7280); margin-top: 8px; line-height: 1.7; }
+.dspc-detail-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 `
 
       function ensureStyles() {
@@ -482,7 +502,8 @@
               value: activity === null ? '未扫描' : `${String(activity.windowDays)} 天`,
               note: activity === null
                 ? '会话日志里的 tool/call 还没读过'
-                : `${String(activity.sessionCount)} 个会话 · ${String(activity.toolCount)} 个工具被调用`,
+                : `${String(activity.sessionCount)} 个会话 · ${String(activity.toolCount)} 个工具被调用`
+                  + (activity.coverage?.bytesBudgetExhausted === true ? ' · 已达解压预算，较早日志已完整计入' : ''),
             }),
             h(Metric, {
               label: '内置组件',
@@ -741,7 +762,10 @@
                 '浏览器侧的实际耗时由本面板在页面加载时从 Resource Timing 读回（「UI 耗时」列出现时才是浏览器实测）。'),
               h('div', null,
                 '子进程探针只 import 模块、不执行 apply()，所以 apply() 里干的活不计入这一列；',
-                '它体现在「本机启动」里，并通过 A/B 历史记录看到组合变化带来的差值。'))),
+                '它体现在「本机启动」里，并通过 A/B 历史记录看到组合变化带来的差值。'),
+              h('div', null,
+                `内置组件（${String(totals.builtin ?? 0)} 个）不测冷加载：它们在 app.asar 内，`,
+                '纯 node 子进程读不了那个归档。面板把它们记为「不可测」，而不是 0 ms。'))),
 
           h('div', { className: 'dspc-section', key: 'measure' },
             h('div', { className: 'dspc-section-head' },
@@ -759,9 +783,15 @@
                 },
               }, jobs.bench?.state === 'running' ? '测量中…' : '重新测量全部'),
               h('span', { className: 'dspc-section-note' },
-                jobs.bench?.state === 'done'
-                  ? `${String(jobs.bench.message)}${typeof jobs.bench.launcher === 'string' ? ` · 探针 ${jobs.bench.launcher}` : ''}`
-                  : '每个插件在独立子进程里 import 一次，取 3 次最小值')),
+                jobs.bench?.state === 'running'
+                  ? `${String(jobs.bench.done)}/${String(jobs.bench.total)} · ${String(jobs.bench.current)}`
+                  : measured.length === 0
+                    ? '还没测量'
+                    // Counted from the rows that actually carry a number, not from
+                    // the job's own message: a plugin whose probe failed has no
+                    // cold-load time and must not be counted as measured.
+                    : `已实测 ${String(measured.length)} 个插件，合计 ${ms(totals.measuredBootMs)}；取 3 次最小值`
+                      + (typeof jobs.bench?.launcher === 'string' ? ' · 探针 ' + jobs.bench.launcher.split(/[\\/]/).pop() : ''))),
             h('div', { className: 'dspc-rows' },
               measured.length === 0
                 ? h('div', { className: 'dspc-empty' }, '还没有测量结果')
@@ -896,17 +926,135 @@
           h('div', { className: 'dspc-body' }, views[tab] ?? overview))
       }
 
-      /** Sidebar glyph: three stacked bars of different lengths (a measure). */
-      function CuratorIcon(props) {
-        const size = Number.isFinite(props?.size) ? props.size : 16
-        return h('svg', {
-          width: size, height: size, viewBox: '0 0 16 16', 'aria-hidden': true, focusable: 'false',
-        },
-        h('path', {
-          d: 'M2.5 12.4h3.4M2.5 8.1h7.2M2.5 3.8h11',
-          fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round',
-        }),
-        h('circle', { cx: 12.6, cy: 12.2, r: 1.5, fill: 'currentColor' }))
+      /**
+       * Module names a Plugins-page `subject` stands for.
+       *
+       * The shipped page passes one of three shapes (verified against its client
+       * bundle): `{ kind: 'row', pkg, row }`, `{ kind: 'bundle', pkg }` where
+       * `pkg.rows` lists the bundle's rows, and `{ kind: 'package', name }` for an
+       * official entry that has no Loader row at all.
+       */
+      function moduleNamesOf(subject) {
+        if (subject === null || typeof subject !== 'object') return []
+        if (subject.kind === 'row') {
+          const name = subject.row?.moduleName
+          return typeof name === 'string' ? [name] : []
+        }
+        if (subject.kind === 'bundle' || subject.kind === 'package') {
+          const rows = subject.pkg?.rows
+          if (!Array.isArray(rows)) return []
+          return rows.map((row) => row?.moduleName).filter((name) => typeof name === 'string')
+        }
+        return []
+      }
+
+      /** The report entries one Plugins-page subject belongs to. */
+      function matchSubject(subject, plugins) {
+        const names = moduleNamesOf(subject)
+        const rowId = subject?.kind === 'row' && typeof subject.row?.rowId === 'string' ? subject.row.rowId : null
+        if (names.length === 0 && rowId === null) return []
+        return plugins.filter((plugin) =>
+          names.includes(plugin.moduleName) || (rowId !== null && plugin.patchId === rowId))
+      }
+
+      const VERDICT_ORDER = { cleanup: 0, disable: 1, review: 2, idle: 3, keep: 4 }
+
+      /**
+       * The curator's facts on ONE plugin's own page.
+       *
+       * It reuses the same `/report` the tab reads, matches the page's subject to
+       * Loader entries by module name (or patch row id), and renders nothing when
+       * the subject is not a composed plugin — the slot's contract is that an
+       * entry draws nothing for a subject it has nothing for.
+       */
+      function CuratorDetail(props) {
+        const subject = props?.subject
+        const [report, setReport] = React.useState(null)
+        const [busy, setBusy] = React.useState('')
+        const [notice, setNotice] = React.useState(null)
+
+        const load = React.useCallback(async () => {
+          const result = await postJson('/report', {})
+          if (result.ok && result.payload?.ok === true) setReport(result.payload.value)
+        }, [])
+
+        React.useEffect(() => {
+          void load()
+        }, [load, subject?.kind, subject?.pkg?.name, subject?.row?.rowId])
+
+        if (report === null) return null
+        const matched = matchSubject(subject, Array.isArray(report.plugins) ? report.plugins : [])
+        if (matched.length === 0) return null
+
+        const act = async (key, path, body, text) => {
+          setBusy(key)
+          setNotice(null)
+          const result = await postJson(path, body)
+          setBusy('')
+          if (!result.ok || result.payload?.ok !== true) {
+            setNotice({ kind: 'error', text: result.payload?.error ?? '操作失败' })
+            return
+          }
+          setNotice({ kind: 'ok', text })
+          await load()
+        }
+
+        const worst = matched.reduce((current, plugin) =>
+          (VERDICT_ORDER[plugin.verdict] ?? 9) < (VERDICT_ORDER[current.verdict] ?? 9) ? plugin : current, matched[0])
+        const verdict = VERDICT[worst.verdict] ?? VERDICT.review
+        const bootMs = matched.reduce((sum, plugin) => sum + (Number(plugin.bootMs) || 0), 0)
+        const bytes = matched.reduce((sum, plugin) => sum + (Number(plugin.client?.bytes) || 0), 0)
+        const scanned = matched.some((plugin) => plugin.activity !== null)
+        const calls = matched.reduce((sum, plugin) => sum + (Number(plugin.activity?.calls) || 0), 0)
+        const reasons = matched.flatMap((plugin) => plugin.reasons ?? [])
+        const single = matched.length === 1 ? matched[0] : null
+        const toggleable = single !== null && single.patchId !== null
+
+        return h('div', { className: 'dspc-detail' },
+          h('div', { className: 'dspc-detail-head' },
+            h('span', { className: 'dspc-detail-title' }, '插件管家 · 实测'),
+            h(Badge, { tone: verdict.tone }, verdict.text),
+            single !== null && single.stalled === true
+              ? h(Badge, { tone: 'review' }, `卡住 ${String(single.stalledPhase ?? 'pending')}`)
+              : null),
+          h('div', { className: 'dspc-detail-grid' },
+            h('div', { className: 'dspc-detail-cell' }, '冷加载', h('b', null, ms(bootMs))),
+            h('div', { className: 'dspc-detail-cell' }, 'UI 资源', h('b', null, kb(bytes))),
+            h('div', { className: 'dspc-detail-cell' }, '窗口内调用', h('b', null, scanned ? String(calls) : '未扫描')),
+            h('div', { className: 'dspc-detail-cell' }, '条目', h('b', null, String(matched.length)))),
+          reasons.length === 0
+            ? null
+            : h('div', { className: 'dspc-detail-note' },
+              reasons.slice(0, 4).map((reason, index) =>
+                h('div', { key: String(index) }, reason.text, ' ', h('code', null, reason.code)))),
+          h('div', { className: 'dspc-detail-actions' },
+            toggleable
+              ? h('button', {
+                type: 'button', className: 'dspc-btn', 'data-small': 'true',
+                disabled: busy !== '',
+                onClick: () => {
+                  void act('toggle', '/toggle', { entryId: single.entryId, enabled: single.enabled !== true },
+                    `已${single.enabled === true ? '停用' : '启用'}`)
+                },
+              }, single.enabled === true ? '停用' : '启用')
+              : null,
+            single !== null && single.enabled === true && (single.verdict === 'cleanup' || single.verdict === 'disable')
+              ? h('button', {
+                type: 'button', className: 'dspc-btn', 'data-small': 'true', 'data-danger': 'true',
+                disabled: busy !== '',
+                onClick: () => {
+                  void act('quarantine', '/quarantine', {
+                    entryId: single.entryId,
+                    reasons: (single.reasons ?? []).map((item) => item.code),
+                  }, '已清理，可在「插件管家」页找回')
+                },
+              }, '清理')
+              : null,
+            notice !== null
+              ? h('span', { className: 'dspc-detail-note', style: { marginTop: '0' },
+                role: notice.kind === 'ok' ? 'status' : 'alert',
+                'data-kind': notice.kind }, notice.text)
+              : null))
       }
 
       return {
@@ -914,14 +1062,22 @@
         inject: ['slots'],
         apply(ctx) {
           ensureStyles()
-          ctx.slots.inject('main', () => ctx.slots.register(
-            { name: 'main', key: PANEL_ID },
-            CuratorPage,
-          ))
-          ctx.slots.inject('sidebar.panellist', () => ctx.slots.register(
-            { name: 'sidebar.panellist', id: PANEL_ID, order: 17, label: '插件管家' },
-            CuratorIcon,
-          ))
+          // Both registrations live inside the shipped Plugins page and are
+          // disposed with this plugin's fiber, so a reload leaves no stale tab.
+          ctx.effect(() => {
+            const disposeTab = ctx.slots.inject('plugins.tab', () => ctx.slots.register(
+              { name: 'plugins.tab', id: TAB_ID, order: 10, label: () => '插件管家' },
+              CuratorPage,
+            ))
+            const disposeDetail = ctx.slots.inject('plugins.detail.section', () => ctx.slots.register(
+              { name: 'plugins.detail.section', id: DETAIL_ID, order: 10, label: () => '插件管家' },
+              CuratorDetail,
+            ))
+            return () => {
+              if (typeof disposeTab === 'function') disposeTab()
+              if (typeof disposeDetail === 'function') disposeDetail()
+            }
+          }, 'plugin-curator: plugins-page registrations')
         },
       }
     },

@@ -72,10 +72,18 @@ check('a freshly disabled entry is left alone', () => {
   assert.equal(verdict.verdict, 'idle')
 })
 
-check('a quiet host-only plugin is a disable suggestion', () => {
+check('a quiet host-only plugin is a disable suggestion only when it costs real boot time', () => {
   const verdict = suggestFor({ enabled: true, calls: 0, sessions: 0, bootMs: 90, clientBytes: null })
   assert.equal(verdict.verdict, 'disable')
   assert.deepEqual(verdict.reasons.map((item) => item.code), ['quiet-host-only', 'slow'])
+})
+
+check('a cheap quiet host-only plugin is NOT a disable suggestion', () => {
+  // Prompt-injecting / event-listening plugins leave no `tool/call` behind, so a
+  // cheap one must read as "cannot see it", never as "unused".
+  const cheap = suggestFor({ enabled: true, calls: 0, sessions: 0, bootMs: 4, clientBytes: null })
+  assert.equal(cheap.verdict, 'review')
+  assert.equal(cheap.reasons[0].code, 'unobservable-host-only')
 })
 
 check('a quiet plugin WITHOUT a scan is only a review, never "unused"', () => {

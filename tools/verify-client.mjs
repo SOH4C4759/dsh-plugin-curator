@@ -34,9 +34,14 @@ const source = readFileSync(join(root, 'lib', 'client.js'), 'utf8')
  */
 function createReact(values) {
   let cursor = 0
+  const flat = (children) => children.flat(Infinity)
   const React = {
     createElement(type, props, ...children) {
-      return { type, props: props ?? {}, children: children.flat(4) }
+      const resolved = { ...(props ?? {}) }
+      // React puts positional children on `props.children`; component functions
+      // like Badge/Metric read them from there, so the stub must too.
+      if (children.length > 0) resolved.children = flat(children)
+      return { type, props: resolved, children: flat(children) }
     },
     useState(initial) {
       const supplied = cursor < values.length ? values[cursor] : initial
@@ -54,6 +59,10 @@ function createReact(values) {
     },
     useRef(value) {
       return { current: value }
+    },
+    useId() {
+      cursor += 0
+      return 'uid'
     },
   }
   return React
@@ -218,6 +227,12 @@ function renderTab(tab) {
   const { pluginObject } = boot(values, report)
   const registered = []
   const ctx = {
+    effect(fn) {
+      const dispose = fn()
+      return () => {
+        if (typeof dispose === 'function') dispose()
+      }
+    },
     slots: {
       inject(_name, fn) {
         fn()
@@ -232,6 +247,32 @@ function renderTab(tab) {
   return { registered }
 }
 
+/** Render the one-plugin detail section for a Plugins-page subject. */
+function renderDetail(subject, values = [report, '', null]) {
+  const { pluginObject } = boot(values, report)
+  const registered = []
+  pluginObject.apply({
+    effect: (fn) => {
+      const dispose = fn()
+      return () => {
+        if (typeof dispose === 'function') dispose()
+      }
+    },
+    slots: {
+      inject: (_name, fn) => fn(),
+      register: (meta, component) => {
+        registered.push({ meta, component })
+        return () => {}
+      },
+    },
+  })
+  const detail = registered.find((item) => item.meta.name === 'plugins.detail.section').component
+  // Render ONCE: the stub's useState queue advances per call, so a second render
+  // would see the fallback values instead of the supplied report.
+  const tree = detail({ subject })
+  return { tree, text: textOf(tree) }
+}
+
 check('the bundle registers under the package module id', () => {
   const { captured } = boot([], report)
   assert.equal(captured.id, 'dsh-plugin-curator')
@@ -244,22 +285,33 @@ check('slots is injected and both registrations are made', () => {
   assert.ok(pluginObject.inject.includes('slots'))
   const { registered } = renderTab('overview')
   assert.equal(registered.length, 2)
+  assert.deepEqual(registered.map((item) => item.meta.name).sort(), ['plugins.detail.section', 'plugins.tab'])
 })
 
-check('the main panel key equals the sidebar entry id', () => {
+check('the page registers as a tab INSIDE the Plugins page, not a sidebar entry', () => {
   const { registered } = renderTab('overview')
-  const main = registered.find((item) => item.meta.name === 'main')
-  const side = registered.find((item) => item.meta.name === 'sidebar.panellist')
-  assert.ok(main !== undefined && side !== undefined)
-  assert.equal(main.meta.key, side.meta.id)
-  assert.equal(side.meta.id, 'plugin-curator')
-  assert.equal(typeof side.component, 'function')
+  const tab = registered.find((item) => item.meta.name === 'plugins.tab')
+  assert.ok(tab !== undefined, 'no plugins.tab registration')
+  assert.equal(tab.meta.id, 'curator', 'the slot id is the tab key')
+  assert.equal(typeof tab.meta.label, 'function')
+  assert.equal(tab.meta.label(), '插件管家')
+  assert.equal(typeof tab.component, 'function')
+  assert.equal(registered.filter((item) => item.meta.name === 'main').length, 0)
+  assert.equal(registered.filter((item) => item.meta.name === 'sidebar.panellist').length, 0)
+})
+
+check('the detail section registers against one plugin page', () => {
+  const { registered } = renderTab('overview')
+  const detail = registered.find((item) => item.meta.name === 'plugins.detail.section')
+  assert.ok(detail !== undefined)
+  assert.equal(detail.meta.id, 'curator-detail')
+  assert.equal(typeof detail.component, 'function')
 })
 
 for (const tab of ['overview', 'plugins', 'advice', 'startup', 'cleanup']) {
   check(`the ${tab} tab renders against a populated report`, () => {
     const { registered } = renderTab(tab)
-    const page = registered.find((item) => item.meta.name === 'main').component
+    const page = registered.find((item) => item.meta.name === 'plugins.tab').component
     const tree = page({})
     const text = textOf(tree)
     assert.ok(text.length > 30, 'the panel rendered almost nothing')
@@ -274,26 +326,56 @@ for (const tab of ['overview', 'plugins', 'advice', 'startup', 'cleanup']) {
   })
 }
 
+check('a row subject shows that plugin\'s measured facts', () => {
+  const subject = {
+    kind: 'row',
+    pkg: { name: 'dsh-quiet', rows: [{ rowId: 'dsh-quiet', moduleName: 'dsh-quiet', enabled: true }] },
+    row: { rowId: 'dsh-quiet', moduleName: 'dsh-quiet', enabled: true },
+  }
+  const { text } = renderDetail(subject)
+  assert.match(text, /插件管家 · 实测/)
+  assert.match(text, /冷加载/)
+  assert.match(text, /可停用/)
+})
+
+check('a bundle subject aggregates its rows', () => {
+  const subject = {
+    kind: 'bundle',
+    pkg: {
+      name: 'multi',
+      rows: [
+        { rowId: 'a', moduleName: 'dsh-used', enabled: true },
+        { rowId: 'b', moduleName: 'dsh-quiet', enabled: true },
+      ],
+    },
+  }
+  const { text } = renderDetail(subject)
+  assert.match(text, /插件管家 · 实测/)
+  // Two rows measured 120 ms + 88 ms.
+  assert.match(text, /208 ms/)
+  assert.match(text, /条目\s*2/)
+})
+
+check('a subject that is not a composed plugin renders nothing', () => {
+  const official = { kind: 'package', name: 'not-installed-anywhere' }
+  const { tree } = renderDetail(official)
+  assert.equal(tree, null)
+  const other = { kind: 'row', pkg: { name: 'x', rows: [] }, row: { rowId: 'x', moduleName: 'nope', enabled: true } }
+  assert.equal(renderDetail(other).tree, null)
+})
+
 check('a pending report renders the loading shell instead of crashing', () => {
   const values = [null, null, 'overview', '', null, '', '']
   const { pluginObject } = boot(values, report)
   const registered = []
   pluginObject.apply({
+    effect: (fn) => fn(),
     slots: { inject: (_n, fn) => fn(), register: (meta, component) => { registered.push({ meta, component }); return () => {} } },
   })
-  const page = registered.find((item) => item.meta.name === 'main').component
+  const page = registered.find((item) => item.meta.name === 'plugins.tab').component
   const text = textOf(page({}))
   assert.match(text, /插件管家/)
   assert.match(text, /正在读取插件清单/)
-})
-
-check('the sidebar glyph draws an svg at the requested size', () => {
-  const { registered } = renderTab('overview')
-  const icon = registered.find((item) => item.meta.name === 'sidebar.panellist').component
-  const tree = icon({ size: 18, active: true })
-  assert.equal(tree.type, 'svg')
-  assert.equal(tree.props.width, 18)
-  assert.equal(tree.props.viewBox, '0 0 16 16')
 })
 
 console.log(`\n${checks} checks passed`)
