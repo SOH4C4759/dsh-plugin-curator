@@ -1,0 +1,53 @@
+{
+  "name": "dsh-plugin-curator",
+  "version": "0.1.0",
+  "description": "本地插件管家：实测每个插件对 DSH 启动的开销、统计活跃度、给出禁用建议，并清理不兼容/未启用条目且可找回。",
+  "license": "MIT",
+  "author": "lxj5820",
+  "type": "module",
+  "main": "entry.js",
+  "exports": {
+    ".": "./entry.js",
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src",
+    "tools",
+    "cordis.patch.yml",
+    "entry.js",
+    "bench-probe.mjs",
+    "probe-selfcheck.mjs",
+    "build-client.mjs",
+    "package.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "meta": {
+    "title": "插件管家",
+    "description": "按插件实测启动开销与活跃度，给出停用建议；清理不兼容与已停用条目，并可从回收站找回。"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "cordis",
+    "audit",
+    "startup",
+    "profile"
+  ]
+}

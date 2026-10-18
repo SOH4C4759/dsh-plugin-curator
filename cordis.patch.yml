@@ -1,0 +1,13 @@
+# dsh-plugin-curator bundle patch.
+#
+# One Host row named after the package. The Host half serves the
+# `/api/plugin-curator/*` routes (inventory, measured startup cost, activity
+# scan, quarantine/restore); the browser half is declared by `dsh.client` in
+# package.json and registers the 插件管家 panel in the sidebar.
+#
+# The id is a contract only in the sense that the panel's `main` key and the
+# sidebar entry id are the same string (`plugin-curator`); the Host half does
+# not read this file.
+- insert:
+    - id: plugin-curator
+      name: 'dsh-plugin-curator'
