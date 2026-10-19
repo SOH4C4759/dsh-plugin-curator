@@ -83,6 +83,7 @@ function plugin(overrides) {
     title: '插件',
     description: null,
     kind: 'link',
+    origin: 'third-party',
     source: 'link:F:/CodeProj/pkg',
     packageDir: 'F:/CodeProj/pkg',
     hasUi: false,
@@ -119,6 +120,31 @@ const report = {
     plugin({ entryId: 'c', moduleName: 'dsh-ui', title: '带界面的插件', hasUi: true, client: { path: 'x', bytes: 480000 }, verdict: 'review', reasons: [{ code: 'ui-unobserved', text: '窗口内 0 次调用' }] }),
     plugin({ entryId: 'd', moduleName: 'dsh-broken', title: '坏掉的插件', patchId: null, readOnlyReason: 'unaddressable', fiberPhase: 'failed', verdict: 'cleanup', error: { code: 'operation-error' }, reasons: [{ code: 'load-failed', text: '加载失败' }] }),
     plugin({ entryId: 'e', moduleName: 'dsh-off', title: '已停用的插件', enabled: false, verdict: 'idle', bootMs: null, activity: null, reasons: [{ code: 'disabled', text: '已在组合中停用' }] }),
+    plugin({
+      entryId: 'official-1',
+      moduleName: '@deepseek-ai/dsh-llm',
+      title: '模型调用服务',
+      origin: 'builtin',
+      kind: 'inbox',
+      patchId: 'llm',
+      bootMs: null,
+      activity: null,
+      verdict: 'keep',
+      reasons: [{ code: 'builtin-row', text: 'DSH 自带' }],
+    }),
+    plugin({
+      entryId: 'official-2',
+      moduleName: '@deepseek-ai/dsh-tools',
+      title: '工具注册表',
+      origin: 'builtin',
+      kind: 'inbox',
+      patchId: null,
+      readOnlyReason: 'management-required',
+      bootMs: null,
+      activity: null,
+      verdict: 'keep',
+      reasons: [{ code: 'builtin-row', text: 'DSH 自带' }],
+    }),
   ],
   totals: { plugins: 5, enabled: 3, disabled: 2, failed: 1, clientBytes: 480000, measuredBootMs: 220 },
   activity: { scannedAt: Date.now(), windowDays: 14, sessionCount: 281, coverage: { files: 300, filesRead: 281, bytesRead: 1, frames: 2, failedFrames: 0, stoppedEarly: false, elapsedMs: 12000, zstd: true }, toolCount: 37, ambiguous: {}, observedNames: 37 },
@@ -221,9 +247,10 @@ function textOf(node, depth = 0) {
 }
 
 /** Render the page with a chosen tab already selected. */
-function renderTab(tab) {
-  // useState calls, in order: report, error, tab, busy, notice, filter, confirming.
-  const values = [report, null, tab, '', null, '', '']
+function renderTab(tab, options = {}) {
+  // useState calls, in order: report, error, tab, busy, notice, filter,
+  // confirming, showOfficial.
+  const values = [report, null, tab, '', null, options.filter ?? '', '', options.showOfficial === true]
   const { pluginObject } = boot(values, report)
   const registered = []
   const ctx = {
@@ -325,6 +352,34 @@ for (const tab of ['overview', 'plugins', 'advice', 'startup', 'cleanup']) {
     if (tab === 'cleanup') assert.match(text, /回收站/)
   })
 }
+
+check('official rows are folded away by default', () => {
+  const page = renderTab('plugins').registered.find((item) => item.meta.name === 'plugins.tab').component
+  const text = textOf(page({}))
+  assert.match(text, /官方组件/)
+  assert.match(text, /2 个/)          // two builtin rows counted
+  assert.match(text, /第三方 5/)       // five third-party rows listed
+  assert.doesNotMatch(text, /模型调用服务/)  // folded: the row itself is not drawn
+  assert.doesNotMatch(text, /工具注册表/)
+})
+
+check('the fold opens when asked', () => {
+  const page = renderTab('plugins', { showOfficial: true }).registered
+    .find((item) => item.meta.name === 'plugins.tab').component
+  const text = textOf(page({}))
+  assert.match(text, /模型调用服务/)
+  assert.match(text, /工具注册表/)
+  assert.match(text, /收起/)
+})
+
+check('a filter overrides the fold so a name is always findable', () => {
+  const page = renderTab('plugins', { filter: '模型' }).registered
+    .find((item) => item.meta.name === 'plugins.tab').component
+  const text = textOf(page({}))
+  assert.match(text, /模型调用服务/)
+  assert.match(text, /过滤时自动展开/)
+  assert.doesNotMatch(text, /安静的宿主插件/)
+})
 
 check('a row subject shows that plugin\'s measured facts', () => {
   const subject = {

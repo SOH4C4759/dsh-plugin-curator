@@ -106,6 +106,13 @@
 .dspc-row[data-head="true"] { font-size: 11.5px; color: var(--dsw-alias-label-secondary, #6b7280);
   background: var(--dsw-alias-bg-layer-1, #fafbfc); padding: 6px 12px; }
 .dspc-row:not([data-head="true"]):hover { background: var(--dsw-alias-bg-layer-1, #fafbfc); }
+.dspc-group { display: flex; align-items: center; gap: 7px; padding: 8px 12px; cursor: pointer;
+  border-top: 1px solid var(--dsw-alias-border-l1, #eceef1);
+  background: var(--dsw-alias-bg-layer-2, #f6f7f9); font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #5b6270); user-select: none; }
+.dspc-group:hover { background: var(--dsw-alias-bg-layer-1, #eef0f3); }
+.dspc-group:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #2563eb); outline-offset: -2px; }
+.dspc-group b { color: var(--dsw-alias-label-primary, #111); font-weight: 650; font-variant-numeric: tabular-nums; }
 .dspc-cols-plugins { grid-template-columns: minmax(170px, 2.3fr) 62px 68px 76px 74px 66px 92px 96px; }
 .dspc-cols-startup { grid-template-columns: minmax(170px, 2fr) 84px 1fr; }
 .dspc-cols-history { grid-template-columns: 132px 92px 68px 110px 1fr; }
@@ -279,6 +286,12 @@
         const [notice, setNotice] = React.useState(null)
         const [filter, setFilter] = React.useState('')
         const [confirming, setConfirming] = React.useState('')
+        /**
+         * Official (DSH-shipped) rows start folded: 203 of 229 entries are DSH's
+         * own, they cannot be pruned from here, and listing them first would bury
+         * the 26 the user can actually act on. A filter overrides the fold.
+         */
+        const [showOfficial, setShowOfficial] = React.useState(false)
 
         const load = React.useCallback(async (silent) => {
           const result = await postJson('/report', {})
@@ -426,7 +439,7 @@
 
         const tabs = [
           { id: 'overview', label: '概览' },
-          { id: 'plugins', label: '插件', count: totals.plugins },
+          { id: 'plugins', label: '插件', count: Number.isFinite(totals.thirdParty) ? totals.thirdParty : totals.plugins },
           { id: 'advice', label: '建议', count: suggestions.length },
           { id: 'startup', label: '启动开销' },
           { id: 'cleanup', label: '清理与找回', count: cleanup.broken.length + cleanup.disabled.length },
@@ -579,11 +592,15 @@
         /* -- plugins ---------------------------------------------------- */
 
         const needle = filter.trim().toLowerCase()
-        const shown = needle === ''
-          ? plugins
-          : plugins.filter((plugin) =>
-            String(plugin.title ?? '').toLowerCase().indexOf(needle) >= 0
-            || String(plugin.moduleName ?? '').toLowerCase().indexOf(needle) >= 0)
+        const matches = (plugin) =>
+          needle === ''
+          || String(plugin.title ?? '').toLowerCase().indexOf(needle) >= 0
+          || String(plugin.moduleName ?? '').toLowerCase().indexOf(needle) >= 0
+        const matched = plugins.filter(matches)
+        const thirdRows = matched.filter((plugin) => plugin.origin !== 'builtin')
+        const officialRows = matched.filter((plugin) => plugin.origin === 'builtin')
+        /** A filter always wins over the fold: typing a name must find it. */
+        const officialOpen = showOfficial === true || needle !== ''
 
         const pluginRow = (plugin) => {
           const verdict = VERDICT[plugin.verdict] ?? VERDICT.review
@@ -621,16 +638,43 @@
                 : plugin.enabled ? '停用' : '启用')))
         }
 
+        /** The fold row: one line that turns 203 official rows into a single line. */
+        const officialFold = (count) => h('div', {
+          className: 'dspc-group',
+          key: 'official-fold',
+          role: 'button',
+          tabIndex: 0,
+          'aria-expanded': officialOpen ? 'true' : 'false',
+          onClick: () => setShowOfficial((value) => value !== true),
+          onKeyDown: (event) => {
+            if (event?.key === 'Enter' || event?.key === ' ') setShowOfficial((value) => value !== true)
+          },
+        },
+        h('svg', { width: 10, height: 10, viewBox: '0 0 10 10', 'aria-hidden': true },
+          h('path', {
+            d: officialOpen ? 'M2 6.2 L5 3.2 L8 6.2' : 'M3.6 1.8 L6.6 5 L3.6 8.2',
+            fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round',
+          })),
+        h('span', null, '官方组件 ', h('b', null, String(count)), ' 个'),
+        h('span', { className: 'dspc-muted' },
+          'DSH 自带，行常不可寻址，不参与停用/清理建议 —— ',
+          officialOpen ? '收起' : '展开'),
+        needle === ''
+          ? null
+          : h('span', { className: 'dspc-muted' }, '（过滤时自动展开）'))
+
         const pluginsView = [
           h('div', { key: 'head', style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' } },
             h('input', {
               className: 'dspc-filter',
-              placeholder: '按名称过滤',
+              placeholder: '按名称过滤（含官方组件）',
               value: filter,
               onChange: (event) => setFilter(event.target.value),
             }),
             h('span', { className: 'dspc-section-note' },
-              `${String(shown.length)} / ${String(plugins.length)} 个条目 · 冷加载 ${ms(totals.measuredBootMs)} · UI ${kb(totals.clientBytes)}`)),
+              `第三方 ${String(thirdRows.length)} · 官方 ${String(officialRows.length)}`
+              + (needle === '' ? '' : `（匹配 ${String(matched.length)} 个）`)
+              + ` · 冷加载 ${ms(totals.measuredBootMs)} · UI ${kb(totals.clientBytes)}`)),
           h('div', { className: 'dspc-rows', key: 'rows' },
             h('div', { className: 'dspc-row dspc-cols-plugins', 'data-head': 'true' },
               h('span', null, '插件'),
@@ -641,13 +685,17 @@
               h('span', { className: 'dspc-num' }, '调用'),
               h('span', null, '判断'),
               h('span', { style: { textAlign: 'right' } }, '操作')),
-            shown.length === 0
+            matched.length === 0
               ? h('div', { className: 'dspc-empty' }, '没有匹配的插件')
-              : shown.map(pluginRow)),
+              : thirdRows.map(pluginRow),
+            officialRows.length === 0 ? null : officialFold(officialRows.length),
+            officialOpen ? officialRows.map(pluginRow) : null),
           h('div', { className: 'dspc-note', key: 'note', style: { marginTop: '10px' } },
             '「调用」列是最近一个活跃度窗口内的 ',
             h('code', null, 'tool/call'),
             ' 次数；「未扫描」表示还没跑过扫描，不是 0。',
+            h('br'),
+            '官方组件默认折叠：它们由 DSH 自带、行常不可寻址，停用不是这里该做的决定。',
             pluginNote(plugins)),
         ]
 
