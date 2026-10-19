@@ -1,5 +1,11 @@
 # dsh-plugin-curator · 插件管家
 
+[![npm](https://img.shields.io/npm/v/dsh-plugin-curator.svg)](https://www.npmjs.com/package/dsh-plugin-curator)
+[![CI](https://github.com/SOH4C4759/dsh-plugin-curator/actions/workflows/ci.yml/badge.svg)](https://github.com/SOH4C4759/dsh-plugin-curator/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+介绍片（B 站，仅自己可见）：<https://www.bilibili.com/video/BV1zSJ96TEVA>
+
 **官方「插件」页里的一个标签页**（`插件 → 插件管家`，紧挨着自带的「已安装」标签），回答四个问题：**装了什么、每个插件拖慢启动多少、平时有没有在用、哪些可以清掉**。它不自建侧栏入口 —— 插件管理本来就是那一页的事，管家只是把「实测」接了进去；同一份结论还会出现在每个插件自己的详情页底部。
 
 它的第一原则是：**每个数字都标注测量方法**。面板里不会出现「预计节省 300 ms」这种没有来源的估算 —— 只有三种实测（本进程启动、子进程冷加载、浏览器 Resource Timing）和一条 A/B 启动历史。
