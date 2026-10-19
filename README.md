@@ -4,7 +4,7 @@
 [![CI](https://github.com/SOH4C4759/dsh-plugin-curator/actions/workflows/ci.yml/badge.svg)](https://github.com/SOH4C4759/dsh-plugin-curator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-介绍片（B 站，仅自己可见）：<https://www.bilibili.com/video/BV1zSJ96TEVA>
+介绍片（B 站，仅自己可见）：<https://www.bilibili.com/video/BV1vFJR68E4V>
 
 **官方「插件」页里的一个标签页**（`插件 → 插件管家`，紧挨着自带的「已安装」标签），回答四个问题：**装了什么、每个插件拖慢启动多少、平时有没有在用、哪些可以清掉**。它不自建侧栏入口 —— 插件管理本来就是那一页的事，管家只是把「实测」接了进去；同一份结论还会出现在每个插件自己的详情页底部。
 
