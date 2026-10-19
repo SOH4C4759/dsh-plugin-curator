@@ -59,7 +59,8 @@ jobs:
           VERSION="$(node -p 'require("./package.json").version')"
           mkdir -p dist
           npm pack --pack-destination dist >/dev/null
-          TARBALL="dist/${NAME}-${VERSION}.tgz"
+          # Absolute: the steps below `cd` into the unpacked package.
+          TARBALL="$PWD/dist/${NAME}-${VERSION}.tgz"
           STAGE="$(mktemp -d)"
           tar -xzf "$TARBALL" -C "$STAGE"
           # `npm pack` carries only the `files` allow-list, so this is the check
