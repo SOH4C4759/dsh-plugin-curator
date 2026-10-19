@@ -215,7 +215,7 @@ check('the profile is found through its manifest dependency', () => {
   mkdirSync(profile, { recursive: true })
   writeFileSync(join(profile, 'package.json'), JSON.stringify({
     name: 'dsh-profile-desktop',
-    dependencies: { 'dsh-plugin-curator': 'link:F:/CodeProj/dsh-plugin-curator' },
+    dependencies: { 'dsh-plugin-curator': 'link:D:/plugins/dsh-plugin-curator' },
   }))
   writeFileSync(join(profile, 'cordis.patch.yml'), '[]\n')
   const found = detectProfile({}, { DSH_HOME: home })

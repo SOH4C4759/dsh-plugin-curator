@@ -1,0 +1,89 @@
+name: Release
+
+# Tag-driven. `v*` tags run this workflow; the manual trigger re-runs the same
+# steps for a tag that already exists (for example after adding NPM_TOKEN).
+#
+# Every step is idempotent: an already-published npm version is a notice, not a
+# failure, so a re-run after fixing a later step does not turn red on npm.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release, e.g. v0.1.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: Publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: The tag and the manifest must agree
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p 'require("./package.json").version')"
+          test "$TAG" = "v$VERSION" || { echo "tag $TAG does not match package.json $VERSION"; exit 1; }
+
+      - name: Prove the tree before publishing it
+        run: |
+          node build-client.mjs
+          git diff --exit-code -- lib/client.js
+          node tools/verify-host.mjs
+          node tools/verify-client.mjs
+          node tools/verify-routes.mjs
+
+      # The version being published must not already exist; `npm view` answers
+      # that question, so a re-run says "already there" instead of failing red.
+      - name: Publish to npm (skipped without NPM_TOKEN or when already published)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          NAME="$(node -p 'require("./package.json").name')"
+          VERSION="$(node -p 'require("./package.json").version')"
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::notice::NPM_TOKEN is not configured; skipping npm publish"
+            exit 0
+          fi
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice::$NAME@$VERSION is already on npm"
+            exit 0
+          fi
+          npm publish --provenance --access public
+
+      - name: Release notes from CHANGELOG
+        run: node scripts/release-notes.mjs > release-body.md
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::release $TAG already exists"
+            exit 0
+          fi
+          NAME="$(node -p 'require("./package.json").meta.title')"
+          VERSION="$(node -p 'require("./package.json").version')"
+          gh release create "$TAG" \
+            --title "$NAME v$VERSION · 官方插件页里的体检台" \
+            --notes-file release-body.md \
+            --verify-tag

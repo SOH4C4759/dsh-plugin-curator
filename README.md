@@ -112,9 +112,13 @@
 ## 七、安装 / 卸载
 
 ```powershell
-# 安装（link 到本地检出，热生效；Host 半需要重启一次）
+# 从本地检出安装（热生效；Host 半需要重启一次）
 #   在 DSH 里由模型执行：
-#   plugin_manager install_bundle { target: "link:F:\\CodeProj\\dsh-plugin-curator" }
+#   plugin_manager install_bundle { target: "link:<你的检出目录>/dsh-plugin-curator" }
+
+# 从 npm 安装（dsh 0.2.x 的 profile 目录里）
+#   pnpm add dsh-plugin-curator
+#   然后在 profile 的 dsh.profile.bundles 里追加 dsh-plugin-curator
 
 # 卸载
 #   plugin_manager remove_bundle { target: "dsh-plugin-curator" }

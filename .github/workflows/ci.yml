@@ -1,0 +1,82 @@
+name: CI
+
+# Everything this package claims is proven here, with no install step: the Host
+# half, the browser half and the seven routes all run as plain node scripts, and
+# the tarball is unpacked and executed outside the checkout it was built from.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  suites:
+    name: Suites (node ${{ matrix.node }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # `engines` declares 22.19+ / 24+; 22 is the floor the desktop runtime
+        # ships, 24 is the newest line the package is tested on.
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Host rules, session frames, attribution, profile detection
+        run: node tools/verify-host.mjs
+      - name: Build the browser half from its source
+        run: node build-client.mjs
+      - name: Browser half in a stub React
+        run: node tools/verify-client.mjs
+      - name: Routes against a fake Host (spawns the real probe)
+        run: node tools/verify-routes.mjs
+
+  package:
+    name: Package contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: The committed browser half equals its source
+        run: |
+          set -euo pipefail
+          node build-client.mjs
+          git diff --exit-code -- lib/client.js
+      - name: Pack, unpack outside the checkout, and run the suites there
+        run: |
+          set -euo pipefail
+          NAME="$(node -p 'require("./package.json").name')"
+          VERSION="$(node -p 'require("./package.json").version')"
+          mkdir -p dist
+          npm pack --pack-destination dist >/dev/null
+          TARBALL="dist/${NAME}-${VERSION}.tgz"
+          STAGE="$(mktemp -d)"
+          tar -xzf "$TARBALL" -C "$STAGE"
+          # `npm pack` carries only the `files` allow-list, so this is the check
+          # that the allow-list is complete: every entry point, the probe, the
+          # prebuilt browser half and the bundle patch must all be inside.
+          for f in entry.js bench-probe.mjs probe-selfcheck.mjs cordis.patch.yml \
+                   lib/client.js package.json LICENSE README.md; do
+            test -f "$STAGE/package/$f" || { echo "missing $f in the tarball"; exit 1; }
+          done
+          cd "$STAGE/package"
+          node tools/verify-host.mjs
+          node tools/verify-client.mjs
+          node tools/verify-routes.mjs
+          du -h "$TARBALL"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ github.event.repository.name }}-tarball
+          path: dist/*.tgz
+          if-no-files-found: error
+          retention-days: 30

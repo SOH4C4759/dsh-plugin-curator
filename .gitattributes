@@ -1,0 +1,6 @@
+# Keep the line endings the sources are written with. The browser half is a
+# validated copy of `src/client.js`, and every suite compares text; a CRLF
+# checkout would make `lib/client.js` differ from its source on Windows clones.
+* text=auto eol=lf
+*.png binary
+*.exe binary

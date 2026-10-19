@@ -3,7 +3,15 @@
   "version": "0.1.0",
   "description": "官方「插件」页里的插件管家标签页与插件详情小节：实测每个插件对 DSH 启动的开销、统计活跃度、给出禁用建议，并清理不兼容/未启用条目且可找回。",
   "license": "MIT",
-  "author": "lxj5820",
+  "author": "SOH4C4759 (https://github.com/SOH4C4759)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SOH4C4759/dsh-plugin-curator.git"
+  },
+  "homepage": "https://github.com/SOH4C4759/dsh-plugin-curator#readme",
+  "bugs": {
+    "url": "https://github.com/SOH4C4759/dsh-plugin-curator/issues"
+  },
   "type": "module",
   "main": "entry.js",
   "exports": {
