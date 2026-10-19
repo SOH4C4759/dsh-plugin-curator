@@ -98,7 +98,12 @@
 .dspc-section { margin-top: 18px; }
 .dspc-section-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
 .dspc-section-title { font-weight: 650; font-size: 13px; }
-.dspc-section-note { font-size: 11.5px; color: var(--dsw-alias-label-secondary, #6b7280); }
+.dspc-ab-bars { display: flex; align-items: flex-end; gap: 12px; overflow-x: auto; padding: 8px 2px 0; }
+.dspc-ab-cell { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 46px; }
+.dspc-ab-bar { width: 20px; border-radius: 3px; background: var(--dsw-alias-border-l1, #cbd5e1); }
+.dspc-ab-bar[data-newest="true"] { background: var(--dsw-alias-brand-primary, #2563eb); }
+.dspc-ab-label { font-size: 10.5px; color: var(--dsw-alias-label-secondary, #6b7280); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dspc-ab-more { align-self: flex-end; font-size: 11px; color: var(--dsw-alias-label-secondary, #6b7280); padding-bottom: 22px; }.dspc-section-note { font-size: 11.5px; color: var(--dsw-alias-label-secondary, #6b7280); }
 .dspc-rows { border: 1px solid var(--dsw-alias-border-l1, #e5e7eb); border-radius: 10px; overflow: hidden; }
 .dspc-row { display: grid; align-items: center; gap: 10px; padding: 8px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l1, #eceef1); }
@@ -255,25 +260,35 @@
       }
 
       /** Boot history as bars; the newest record is the rightmost one. */
+      /**
+       * 最近几次启动的条形图。
+       *
+       * 早先这里是一个 `width:100%` + `preserveAspectRatio="none"` 的 SVG：
+       * viewBox 只有 120 宽，却被拉伸到整列宽，于是两三根 10px 的细条变成
+       * 两块跟列一样宽的方块，数值又几乎相同 —— 看起来就像两张空图。
+       * 现在用 HTML 条形：固定条宽、按比例给高度、每根下面写数值，
+       * 悬停给出时间与组合指纹。
+       */
       function Spark(props) {
-        const values = props.values.filter((value) => Number.isFinite(value))
-        if (values.length === 0) return h('div', { className: 'dspc-empty' }, '还没有启动记录')
-        const max = Math.max(...values)
-        const width = Math.max(120, values.length * 14)
-        return h('svg', { width: '100%', height: 64, viewBox: `0 0 ${String(width)} 64`, preserveAspectRatio: 'none' },
-          values.map((value, index) => {
-            const ratio = max === 0 ? 0 : value / max
-            const barHeight = Math.max(2, Math.round(ratio * 56))
-            return h('rect', {
-              key: String(index),
-              x: index * 14 + 1,
-              y: 60 - barHeight,
-              width: 10,
-              height: barHeight,
-              rx: 2,
-              fill: index === values.length - 1 ? 'var(--dsw-alias-brand-primary, #2563eb)' : 'var(--dsw-alias-border-l1, #cbd5e1)',
-            })
-          }))
+        const records = (props.records ?? []).filter((item) => Number.isFinite(item?.settledMs))
+        if (records.length === 0) return h('div', { className: 'dspc-empty' }, '还没有启动记录')
+        const shown = records.slice(0, 24)
+        const max = Math.max(...shown.map((item) => Number(item.settledMs)), 1)
+        return h('div', { className: 'dspc-ab-bars', role: 'img', 'aria-label': `最近 ${String(shown.length)} 次启动时长` },
+          shown.map((item, index) => h('div', {
+            className: 'dspc-ab-cell',
+            key: `${String(item.at)}-${String(index)}`,
+            title: `${clock(item.at)} · ${ms(item.settledMs)} · 启用 ${String(item.enabledCount ?? 0)} 个 · 组合 ${String(item.fingerprint ?? '—')}`,
+          },
+          h('div', {
+            className: 'dspc-ab-bar',
+            'data-newest': index === 0 ? 'true' : undefined,
+            style: { height: `${String(8 + Math.round((Number(item.settledMs) / max) * 62))}px` },
+          }),
+          h('span', { className: 'dspc-ab-label' }, ms(item.settledMs)))),
+          records.length > shown.length
+            ? h('span', { className: 'dspc-ab-more' }, `更早 ${String(records.length - shown.length)} 次略`)
+            : null)
       }
 
       /* ------------------------------------------------------------ page -- */
@@ -531,11 +546,11 @@
               h('span', { className: 'dspc-section-title' }, '启动记录（A/B 实测）'),
               h('span', { className: 'dspc-section-note' },
                 '每次 DSH 启动记一条；组合变化时给出与上一次不同组合的差值')),
-            h(Spark, { values: boot.history.map((item) => Number(item?.settledMs)).reverse() }),
+            h(Spark, { records: boot.history }),
             h('div', { className: 'dspc-note', style: { marginTop: '6px' } },
               boot.history.length === 0
                 ? '还没有历史记录：本插件的第一次启动正在记录。'
-                : `最近一次 ${clock(boot.history[0]?.at)} · ${ms(boot.history[0]?.settledMs)} · 启用 ${String(boot.history[0]?.enabledCount ?? 0)} 个`)),
+                : `最近一次 ${clock(boot.history[0]?.at)} · ${ms(boot.history[0]?.settledMs)} · 启用 ${String(boot.history[0]?.enabledCount ?? 0)} 个（悬停任一条可看时间与组合指纹）`)),
 
           h('div', { className: 'dspc-section', key: 'actions' },
             h('div', { className: 'dspc-section-head' },

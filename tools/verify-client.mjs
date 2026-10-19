@@ -381,6 +381,28 @@ check('a filter overrides the fold so a name is always findable', () => {
   assert.doesNotMatch(text, /安静的宿主插件/)
 })
 
+check('the A/B startup chart draws one labelled bar per boot record', () => {
+  const page = renderTab('overview').registered.find((item) => item.meta.name === 'plugins.tab').component
+  const tree = page({})
+  // 组件节点要展开才走得到条形（`textOf` 也是这么做的）
+  const bars = []
+  const walk = (node) => {
+    if (node === null || typeof node !== 'object') return
+    if (node.props?.className === 'dspc-ab-bar') bars.push(node)
+    if (typeof node.type === 'function') walk(node.type(node.props ?? {}))
+    for (const child of node.children ?? []) walk(child)
+  }
+  walk(tree)
+  // 替换掉的旧实现是一个被横向拉伸的 SVG：两根几乎等高的细条会变成两块
+  // 空白方块，读不出任何数字。现在每根条子都有像素高度，下面写着实测值。
+  assert.equal(bars.length, report.boot.history.length, 'one bar per record')
+  for (const bar of bars) assert.match(String(bar.props.style?.height), /^\d+px$/)
+  const text = textOf(tree)
+  for (const record of report.boot.history) {
+    assert.ok(text.includes(String(record.settledMs)), 'bar label missing')
+  }
+})
+
 check('a row subject shows that plugin\'s measured facts', () => {
   const subject = {
     kind: 'row',
